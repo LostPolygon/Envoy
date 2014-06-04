@@ -4,11 +4,7 @@ namespace LostPolygon.Envoy.Internal {
     public abstract class EnvoyEventBase {
         protected EventDispatchType _defaultDispatchType;
 
-        protected EnvoyEventBase() {
-            _defaultDispatchType = EventDispatchType.Now;
-        }
-
-        protected EnvoyEventBase(EventDispatchType defaultDispatchType) {
+        protected EnvoyEventBase(EventDispatchType defaultDispatchType = EventDispatchType.Default) {
             _defaultDispatchType = defaultDispatchType == EventDispatchType.Default ?
                                    EventDispatchType.Now :
                                    defaultDispatchType;

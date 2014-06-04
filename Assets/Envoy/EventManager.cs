@@ -29,7 +29,7 @@ namespace LostPolygon.Envoy {
 
         #endregion
 
-        #region GameEvent type argument
+        #region EventData type argument
 
         public void AddListener<T>(EnvoyEventHandler<T> value) where T : EventData {
             AddListenerInternal<T>(value, args => value((T) args));
@@ -48,12 +48,12 @@ namespace LostPolygon.Envoy {
         #region Internal methods
 
         private void DispatchInternal<T>(T arguments, EventDispatchType dispatchType) where T : EventData {
-            EventInfo eventInfo = GetEventNewArguments<T>();
+            EventInfo eventInfo = GetEvent<T>();
             eventInfo.EnvoyEvent.Dispatch(arguments, dispatchType);
         }
 
         private void AddListenerInternal<T>(Delegate value, EnvoyEventHandler EnvoyEventHandler) where T : EventData {
-            EventInfo eventInfo = GetEventNewArguments<T>();
+            EventInfo eventInfo = GetEvent<T>();
             if (eventInfo.DelegateLookup.ContainsKey(value)) {
                 Debug.LogWarning(string.Format("An attempt to attach method {0} to an event multiple times was detected. Ignoring", typeof(T)));
                 return;
@@ -64,7 +64,7 @@ namespace LostPolygon.Envoy {
         }
 
         private void RemoveListenerInternal<T>(Delegate value) where T : EventData {
-            EventInfo eventInfo = GetEventNewArguments<T>();
+            EventInfo eventInfo = GetEvent<T>();
 
             EnvoyEventHandler EnvoyEventHandler;
             bool isFound = eventInfo.DelegateLookup.TryGetValue(value, out EnvoyEventHandler);
@@ -100,11 +100,11 @@ namespace LostPolygon.Envoy {
             return dataEvent;
         }
 
-        private EventInfo GetEventNewArguments<T>() {
-            return GetEvent<T, EventInfo>(_eventDictionaryArguments, CreateEventArguments<T>, newEvent => _eventList.Add(newEvent.EnvoyEvent));
+        private EventInfo GetEvent<T>() {
+            return GetEvent<T, EventInfo>(_eventDictionaryArguments, CreateEvent<T>, newEvent => _eventList.Add(newEvent.EnvoyEvent));
         }
 
-        private static EventInfo CreateEventArguments<T>() {
+        private static EventInfo CreateEvent<T>() {
             EventInfo eventInfo = new EventInfo();
             eventInfo.EnvoyEvent = new EnvoyEvent(GetEventDispatchType(typeof(T)));
             return eventInfo;

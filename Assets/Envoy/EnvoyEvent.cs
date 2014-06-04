@@ -13,10 +13,8 @@ namespace LostPolygon.Envoy.Internal {
             }
         }
 
-        public EnvoyEvent() {
-        }
-
-        public EnvoyEvent(EventDispatchType defaultDispatchType) : base(defaultDispatchType) {
+        public EnvoyEvent(EventDispatchType defaultDispatchType = EventDispatchType.Default)
+            : base(defaultDispatchType) {
         }
 
         public void Dispatch(EventData arguments, EventDispatchType dispatchType = EventDispatchType.Default) {
