@@ -8,19 +8,23 @@ namespace LostPolygon.Envoy {
         private class EventInfo {
             public readonly Dictionary<Delegate, EnvoyEventHandler> DelegateLookup = new Dictionary<Delegate, EnvoyEventHandler>();
             public EnvoyEvent EnvoyEvent;
+
+            public EventInfo(EnvoyEvent envoyEvent) {
+                EnvoyEvent = envoyEvent;
+            }
         }
 
         private readonly Dictionary<Type, EventInfo> _eventDictionaryArguments = new Dictionary<Type, EventInfo>();
-        private readonly List<EnvoyEventBase> _eventList = new List<EnvoyEventBase>();
+        private readonly List<EnvoyEventBase> _events = new List<EnvoyEventBase>();
 
         #region No arguments
 
-        public void AddListener<T>(Action value) where T : EventData {
-            AddListenerInternal<T>(value, args => value());
+        public void AddListener<T>(Action handler) where T : EventData {
+            AddListenerInternal<T>(handler, args => handler());
         }
 
-        public void RemoveListener<T>(Action value) where T : EventData {
-            RemoveListenerInternal<T>(value);
+        public void RemoveListener<T>(Action handler) where T : EventData {
+            RemoveListenerInternal<T>(handler);
         }
 
         public void Dispatch<T>(EventDispatchType dispatchType = EventDispatchType.Default) where T : EventData {
@@ -31,50 +35,50 @@ namespace LostPolygon.Envoy {
 
         #region EventData type argument
 
-        public void AddListener<T>(EnvoyEventHandler<T> value) where T : EventData {
-            AddListenerInternal<T>(value, args => value((T) args));
+        public void AddListener<T>(EnvoyEventHandler<T> handler) where T : EventData {
+            AddListenerInternal<T>(handler, args => handler((T) args));
         }
 
-        public void RemoveListener<T>(EnvoyEventHandler<T> value) where T : EventData {
-            RemoveListenerInternal<T>(value);
+        public void RemoveListener<T>(EnvoyEventHandler<T> handler) where T : EventData {
+            RemoveListenerInternal<T>(handler);
         }
 
-        public void Dispatch<T>(T arguments, EventDispatchType dispatchType = EventDispatchType.Default) where T : EventData {
-            DispatchInternal(arguments, dispatchType);
+        public void Dispatch<T>(T eventData, EventDispatchType dispatchType = EventDispatchType.Default) where T : EventData {
+            DispatchInternal(eventData, dispatchType);
         }
 
         #endregion
 
         #region Internal methods
 
-        private void DispatchInternal<T>(T arguments, EventDispatchType dispatchType) where T : EventData {
+        private void DispatchInternal<T>(T eventData, EventDispatchType dispatchType) where T : EventData {
             EventInfo eventInfo = GetEvent<T>();
-            eventInfo.EnvoyEvent.Dispatch(arguments, dispatchType);
+            eventInfo.EnvoyEvent.Dispatch(eventData, dispatchType);
         }
 
-        private void AddListenerInternal<T>(Delegate value, EnvoyEventHandler EnvoyEventHandler) where T : EventData {
+        private void AddListenerInternal<T>(Delegate originalHandler, EnvoyEventHandler wrapperHandler) where T : EventData {
             EventInfo eventInfo = GetEvent<T>();
-            if (eventInfo.DelegateLookup.ContainsKey(value)) {
+            if (eventInfo.DelegateLookup.ContainsKey(originalHandler)) {
                 Debug.LogWarning(string.Format("An attempt to attach method {0} to an event multiple times was detected. Ignoring", typeof(T)));
                 return;
             }
 
-            eventInfo.DelegateLookup.Add(value, EnvoyEventHandler);
-            eventInfo.EnvoyEvent += EnvoyEventHandler;
+            eventInfo.DelegateLookup.Add(originalHandler, wrapperHandler);
+            eventInfo.EnvoyEvent += wrapperHandler;
         }
 
-        private void RemoveListenerInternal<T>(Delegate value) where T : EventData {
+        private void RemoveListenerInternal<T>(Delegate handler) where T : EventData {
             EventInfo eventInfo = GetEvent<T>();
 
-            EnvoyEventHandler EnvoyEventHandler;
-            bool isFound = eventInfo.DelegateLookup.TryGetValue(value, out EnvoyEventHandler);
+            EnvoyEventHandler wrapperHandler;
+            bool isFound = eventInfo.DelegateLookup.TryGetValue(handler, out wrapperHandler);
             if (isFound) {
-                eventInfo.DelegateLookup.Remove(value);
-                eventInfo.EnvoyEvent -= EnvoyEventHandler;
+                eventInfo.DelegateLookup.Remove(handler);
+                eventInfo.EnvoyEvent -= wrapperHandler;
             }
 
             if (eventInfo.EnvoyEvent.Event == null) {
-                _eventList.Remove(eventInfo.EnvoyEvent);
+                _events.Remove(eventInfo.EnvoyEvent);
             }
         }
 
@@ -82,12 +86,16 @@ namespace LostPolygon.Envoy {
 
         #region Helper methods
 
-        private TEvent GetEvent<TEventSource, TEvent>(Dictionary<Type, TEvent> eventDictionary,
-            Func<TEvent> constructEvent,
-            Action<TEvent> onEventCreated = null)
-            where TEvent : class {
-            Type delegateType = typeof(TEventSource);
-            TEvent dataEvent;
+        private EventInfo GetEvent<T>() {
+            return GetEvent<T, EventInfo>(_eventDictionaryArguments, CreateEvent<T>, newEvent => _events.Add(newEvent.EnvoyEvent));
+        }
+
+        private static TEventWrapper GetEvent<TEvent, TEventWrapper>(Dictionary<Type, TEventWrapper> eventDictionary,
+            Func<TEventWrapper> constructEvent,
+            Action<TEventWrapper> onEventCreated = null)
+            where TEventWrapper : class {
+            Type delegateType = typeof(TEvent);
+            TEventWrapper dataEvent;
             eventDictionary.TryGetValue(delegateType, out dataEvent);
             if (dataEvent == null) {
                 dataEvent = constructEvent();
@@ -100,13 +108,10 @@ namespace LostPolygon.Envoy {
             return dataEvent;
         }
 
-        private EventInfo GetEvent<T>() {
-            return GetEvent<T, EventInfo>(_eventDictionaryArguments, CreateEvent<T>, newEvent => _eventList.Add(newEvent.EnvoyEvent));
-        }
-
         private static EventInfo CreateEvent<T>() {
-            EventInfo eventInfo = new EventInfo();
-            eventInfo.EnvoyEvent = new EnvoyEvent(GetEventDispatchType(typeof(T)));
+            EnvoyEvent envoyEvent = new EnvoyEvent(GetEventDispatchType(typeof(T)));
+            EventInfo eventInfo = new EventInfo(envoyEvent);
+
             return eventInfo;
         }
 
@@ -130,16 +135,14 @@ namespace LostPolygon.Envoy {
         }
 
         private void DispatchDeferred() {
-            int count = _eventList.Count;
-            for (int i = 0; i < count; i++) {
-                _eventList[i].DispatchDeferred();
+            for (int i = 0, count = _events.Count; i < count; i++) {
+                _events[i].DispatchDeferred();
             }
         }
 
         private void RemoveAllListeners() {
-            int count = _eventList.Count;
-            for (int i = 0; i < count; i++) {
-                int removedCount = _eventList[i].RemoveAllListeners();
+            for (int i = 0, count = _events.Count; i < count; i++) {
+                int removedCount = _events[i].RemoveAllListeners();
                 if (removedCount > 0) {
                     Debug.LogWarning("Some listeners haven't been removed manually. This could lead to memory leaks. Check for missing RemoveListener() calls");
                 }

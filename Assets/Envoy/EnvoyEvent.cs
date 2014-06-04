@@ -7,7 +7,7 @@ namespace LostPolygon.Envoy.Internal {
         private readonly Queue<EventData> _deferredDispatchData = new Queue<EventData>();
         private event EnvoyEventHandler _event;
 
-        public override Delegate Event {
+        public override EnvoyEventHandler Event {
             get {
                 return _event;
             }
