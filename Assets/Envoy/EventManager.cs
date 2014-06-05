@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using UnityEngine;
+using System.Text;
 using LostPolygon.Envoy.Internal;
+using UnityEngine;
 
 namespace LostPolygon.Envoy {
     public class EventManager : MonoBehaviour, IDisposable {
@@ -14,10 +15,108 @@ namespace LostPolygon.Envoy {
             }
         }
 
-        private readonly Dictionary<Type, EventInfo> _eventDictionaryArguments = new Dictionary<Type, EventInfo>();
+        private struct ResponderTypeInfo {
+            public readonly Type ArgumentType;
+            public readonly Type ReturnType;
+
+            public ResponderTypeInfo(Type returnType, Type argumentType) {
+                ReturnType = returnType;
+                ArgumentType = argumentType;
+            }
+
+            public bool Equals(ResponderTypeInfo other) {
+                return ArgumentType == other.ArgumentType && ReturnType == other.ReturnType;
+            }
+
+            public override bool Equals(object obj) {
+                if (ReferenceEquals(null, obj)) return false;
+                return obj is ResponderTypeInfo && Equals((ResponderTypeInfo) obj);
+            }
+
+            public override int GetHashCode() {
+                unchecked {
+                    return ((ArgumentType != null ? ArgumentType.GetHashCode() : 0) * 397) ^ (ReturnType != null ? ReturnType.GetHashCode() : 0);
+                }
+            }
+        }
+
+        private readonly Dictionary<Type, EventInfo> _eventsLookup = new Dictionary<Type, EventInfo>();
+        private readonly Dictionary<ResponderTypeInfo, Delegate> _responders = new Dictionary<ResponderTypeInfo, Delegate>();
         private readonly List<EnvoyEventBase> _events = new List<EnvoyEventBase>();
 
-        #region No arguments
+        #region TArgument type responders
+
+        public TReturn Request<TArgument, TReturn>(TArgument argument) {
+            ResponderTypeInfo typeInfo = new ResponderTypeInfo(typeof(TReturn), typeof(TArgument));
+
+            Delegate baseHandler;
+            bool isFound = _responders.TryGetValue(typeInfo, out baseHandler);
+            if (isFound) {
+                Func<TArgument, TReturn> handler = (Func<TArgument, TReturn>) baseHandler;
+                return handler(argument);
+            }
+
+            throw new ResponderNotFoundException(typeof(TReturn), typeof(TArgument));
+        }
+
+        public void AddResponder<TArgument, TReturn>(Func<TArgument, TReturn> handler) {
+            AddResponderInternal(typeof(TReturn), typeof(TArgument), handler);
+        }
+
+        public void RemoveResponder<TArgument, TReturn>(Func<TArgument, TReturn> handler) {
+            RemoveResponderInternal(typeof(TReturn), typeof(TArgument), handler);
+        }
+
+        #endregion
+
+        #region No argument responder
+
+        public TReturn Request<TReturn>() {
+            ResponderTypeInfo typeInfo = new ResponderTypeInfo(typeof(TReturn), null);
+
+            Delegate baseHandler;
+            bool isFound = _responders.TryGetValue(typeInfo, out baseHandler);
+            if (isFound) {
+                Func<TReturn> handler = (Func<TReturn>) baseHandler;
+                return handler();
+            }
+
+            throw new ResponderNotFoundException(typeof(TReturn), null);
+        }
+
+        public void AddResponder<TReturn>(Func<TReturn> handler) {
+            AddResponderInternal(typeof(TReturn), null, handler);
+        }
+
+        public void RemoveResponder<TReturn>(Func<TReturn> handler) {
+            RemoveResponderInternal(typeof(TReturn), null, handler);
+        }
+
+        #endregion
+
+        #region Responders internal methods
+
+        private void AddResponderInternal(Type typeReturn, Type typeArgument, Delegate handler) {
+            ResponderTypeInfo typeInfo = new ResponderTypeInfo(typeReturn, typeArgument);
+            if (_responders.ContainsKey(typeInfo)) {
+                Debug.LogError(string.Format("An attempt to attach multiple responders with argument of type '{0}' and return type '{1}' was detected. " +
+                                             "Only suitable responder can registered at the same time",
+                    typeArgument, typeReturn));
+            } else {
+                _responders.Add(typeInfo, handler);
+            }
+        }
+
+        private void RemoveResponderInternal(Type typeReturn, Type typeArgument, Delegate handler) {
+            ResponderTypeInfo typeInfo = new ResponderTypeInfo(typeReturn, typeArgument);
+            if (_responders.ContainsKey(typeInfo)) {
+                _responders.Remove(typeInfo);
+            }
+        }
+
+        #endregion
+
+        #region No argument listener
 
         public void AddListener<T>(Action handler) where T : EventData {
             AddListenerInternal<T>(handler, args => handler());
@@ -33,7 +132,7 @@ namespace LostPolygon.Envoy {
 
         #endregion
 
-        #region EventData type argument
+        #region EventData type listener
 
         public void AddListener<T>(EnvoyEventHandler<T> handler) where T : EventData {
             AddListenerInternal<T>(handler, args => handler((T) args));
@@ -49,7 +148,7 @@ namespace LostPolygon.Envoy {
 
         #endregion
 
-        #region Internal methods
+        #region Listeners internal methods
 
         private void DispatchInternal<T>(T eventData, EventDispatchType dispatchType) where T : EventData {
             EventInfo eventInfo = GetEvent<T>();
@@ -87,7 +186,7 @@ namespace LostPolygon.Envoy {
         #region Helper methods
 
         private EventInfo GetEvent<T>() {
-            return GetEvent<T, EventInfo>(_eventDictionaryArguments, CreateEvent<T>, newEvent => _events.Add(newEvent.EnvoyEvent));
+            return GetEvent<T, EventInfo>(_eventsLookup, CreateEvent<T>, newEvent => _events.Add(newEvent.EnvoyEvent));
         }
 
         private static TEventWrapper GetEvent<TEvent, TEventWrapper>(Dictionary<Type, TEventWrapper> eventDictionary,
@@ -131,7 +230,7 @@ namespace LostPolygon.Envoy {
         }
 
         private void OnDestroy() {
-            RemoveAllListeners();
+            Dispose();
         }
 
         private void DispatchDeferred() {
@@ -141,12 +240,42 @@ namespace LostPolygon.Envoy {
         }
 
         private void RemoveAllListeners() {
+            StringBuilder sb = null;
             for (int i = 0, count = _events.Count; i < count; i++) {
-                int removedCount = _events[i].RemoveAllListeners();
+                EnvoyEventBase envoyEvent = _events[i];
+                int removedCount = envoyEvent.RemoveAllListeners();
                 if (removedCount > 0) {
-                    Debug.LogWarning("Some listeners haven't been removed manually. This could lead to memory leaks. Check for missing RemoveListener() calls");
+                    if (sb == null)
+                        sb = new StringBuilder("Some listeners haven't been removed manually. " +
+                                               "This could lead to memory leaks. " +
+                                               "Check for missing RemoveListener() calls. " +
+                                               "List of event types:\n");
+
+                    foreach (KeyValuePair<Type, EventInfo> eventInfo in _eventsLookup) {
+                        if (eventInfo.Value.EnvoyEvent == envoyEvent) {
+                            sb.AppendFormat("'{0}'\n", eventInfo.Key.FullName);
+                        }
+                    }
                 }
             }
+
+            _eventsLookup.Clear();
+
+            if (sb != null)
+                Debug.LogWarning(sb.ToString());
+        }
+
+        private void RemoveAllResponders() {
+            int count = _responders.Count;
+            if (count > 0) {
+                StringBuilder sb = new StringBuilder("Some responders haven't been removed manually. This could lead to memory leaks. List of responders:\n");
+                foreach (KeyValuePair<ResponderTypeInfo, Delegate> keyValuePair in _responders) {
+                    sb.AppendFormat("Argument type: '{0}', return type: {1}\n", keyValuePair.Key.ArgumentType, keyValuePair.Key.ReturnType);
+                }
+
+                Debug.LogWarning(sb.ToString());
+            }
+            _responders.Clear();
         }
 
         #endregion
@@ -155,6 +284,7 @@ namespace LostPolygon.Envoy {
 
         public void Dispose() {
             RemoveAllListeners();
+            RemoveAllResponders();
         }
 
         #endregion
