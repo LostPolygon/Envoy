@@ -8,7 +8,7 @@ namespace LostPolygon.Envoy {
     /// <summary>
     /// The main facade class of Envoy. Incorporates a message bus and a service locator.
     /// </summary>
-    public class EventManager : MonoBehaviour, IDisposable {
+    public class EnvoyEventManager : MonoBehaviour, IDisposable {
         private class EventInfo {
             public readonly Dictionary<Delegate, EnvoyEventHandler> DelegateLookup = new Dictionary<Delegate, EnvoyEventHandler>();
             public EnvoyEvent EnvoyEvent;

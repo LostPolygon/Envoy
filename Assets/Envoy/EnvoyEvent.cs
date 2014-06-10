@@ -71,8 +71,6 @@ namespace LostPolygon.Envoy.Internal {
                     _event(_deferredDispatchData.Dequeue());
                 }
             }
-
-            _deferredDispatchData.Clear();
         }
 
         /// <summary>

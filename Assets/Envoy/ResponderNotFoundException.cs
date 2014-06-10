@@ -8,18 +8,18 @@ namespace LostPolygon.Envoy {
         /// <summary>
         /// Initializes a new instance of the <see cref="ResponderNotFoundException"/> class.
         /// </summary>
-        /// <param name="argumentType">
-        /// The type of argument passed to the responder.
-        /// </param>
         /// <param name="returnType">
         /// The type of resource being requested.
         /// </param>
-        public ResponderNotFoundException(Type argumentType, Type returnType) :
+        /// <param name="argumentType">
+        /// The type of argument passed to the responder.
+        /// </param>
+        public ResponderNotFoundException(Type returnType, Type argumentType) :
             base(
                 string.Format(
-                    "Can't find any responder with argument of type '{0}' and return type '{1}'",
-                    argumentType == null ? "null" : argumentType.ToString(),
-                    returnType == null ? "null" : returnType.ToString())) {
+                    "Can't find any responder with return type '{0}' and argument of type '{1}'",
+                    returnType == null ? "null" : returnType.ToString(),
+                    argumentType == null ? "null" : argumentType.ToString())) {
         }
     }
 }
